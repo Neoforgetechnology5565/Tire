@@ -1,0 +1,32 @@
+# treadlidar processing configuration. Keys omitted here take the defaults in src/treadlidar/config.py.
+# Every value below is a *starting point*; none has been validated against real Unitree L2 data.
+preprocess:
+  min_range_m: 0.05
+  max_range_m: 5.0
+  outlier_removal: {enabled: false, k: 16, std_ratio: 3.0}   # compare depth_by_stage in the report before enabling
+  voxel_size_m: 0.0                                            # keep 0: never downsample the tread
+
+segmentation:
+  ground_removal: {enabled: true, dist_thresh_m: 0.01, iterations: 400, max_tilt_deg: 20.0, up: [0, 0, 1]}
+  cluster_voxel_m: 0.02
+  cluster_min_points: 500
+  cluster_select: largest            # largest | nearest
+  axis_hint: null                    # e.g. [0, 1, 0] if the wheel axis is known: the most robust setting
+  axis_search: horizontal            # horizontal | normals | auto
+  radius_range_m: [0.25, 0.50]       # SET PER VEHICLE: tire radius from the sidewall code, +-10 %
+  tread_half_width_m: 0.12           # SET PER TIRE: half of the tread width
+  cylinder_band_m: 0.03
+
+analysis:
+  cell_mm: auto                      # or a number in mm
+  target_points_per_cell: 4.0
+  reference: {method: global_poly, poly_degree: 2, bow_correction: true}   # or method: rib_local
+  groove: {threshold_mm: 1.6, min_threshold_sigma: 3.0}
+  smoothing_sigma_cells: 0.0         # keep 0 unless you want to SEE the smoothing damage (see docs)
+
+reconstruction:
+  method: heightfield
+  edge_jump_mm: 30.0
+
+density: {min_points_across_groove: 3.0, min_depth_over_noise: 3.0, max_groove_width_mm: 40.0}
+validation: {target_tight_mm: 0.5, target_loose_mm: 1.0, limited_mm: 2.0, min_pairs: 10, min_scans: 3}
