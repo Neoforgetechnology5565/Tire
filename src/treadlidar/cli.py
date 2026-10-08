@@ -43,6 +43,13 @@ def _cfg(args):
     return load_config(getattr(args, "config", None), over)
 
 
+def _apply_sidecar(pc, files):
+    o = _origin_from_sidecar(files[0])
+    if o is not None:
+        pc.sensor_origin = o
+    return pc
+
+
 def _load_many(files, scale, register):
     clouds = []
     for f in files:
@@ -125,7 +132,7 @@ def cmd_analyze(args):
 def cmd_measure(args):
     cfg = _cfg(args)
     pc, _ = _load_many(args.files, args.scale, "none")
-    pc = _sensor_origin(args, pc)
+    pc = _sensor_origin(args, _apply_sidecar(pc, args.files))
     res = analyze_scan(pc, cfg, export=False)
     for loc in args.at:
         s, w = (float(x) * 1e-3 for x in loc.split(","))
@@ -195,7 +202,7 @@ def cmd_view(args):
 
     cfg = _cfg(args)
     pc, _ = _load_many(args.files, args.scale, "none")
-    pc = _sensor_origin(args, pc)
+    pc = _sensor_origin(args, _apply_sidecar(pc, args.files))
     show(analyze_scan(pc, cfg, export=False))
 
 

@@ -1,0 +1,10 @@
+# UNTESTED: ROS 2 Foxy (verified in the unilidar_sdk2 README) with the L2 driver + tire_scan_recorder.
+FROM ros:foxy-ros-base
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential cmake libpcl-dev \
+    python3-pip python3-colcon-common-extensions ros-foxy-pcl-conversions && rm -rf /var/lib/apt/lists/*
+WORKDIR /ws/src
+RUN git clone https://github.com/unitreerobotics/unilidar_sdk2.git
+COPY ros2/tire_scan_recorder /ws/src/tire_scan_recorder
+WORKDIR /ws
+RUN . /opt/ros/foxy/setup.sh && colcon build --symlink-install || echo "adjust per unilidar_sdk2 README (unitree_lidar_ros2 location)"
+CMD ["bash"]

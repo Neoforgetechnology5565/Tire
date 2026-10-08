@@ -15,6 +15,8 @@ def plot_depth_map(path, hm, D, grooves, vmax_mm=10.0, cmap="RdYlGn_r", title="T
     for g in grooves:
         if len(g.centerline) > 1:
             ax.plot(g.centerline[:, 1] * 1e3, g.centerline[:, 0] * 1e3, "k--", lw=0.6)
+        if g.kind == "other":
+            continue
         ax.annotate(f"{g.id}: {g.depth_m * 1e3:.1f} mm", (g.w_center_m * 1e3, g.s_center_m * 1e3), fontsize=7,
                     ha="center", color="k", bbox=dict(boxstyle="round,pad=0.1", fc="w", alpha=0.7))
     ax.set_xlabel("w along wheel axis [mm]")

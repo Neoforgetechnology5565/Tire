@@ -1,0 +1,15 @@
+# UNTESTED starting point for the ROS1 Noetic side (Point-LIO for the L2). GPL-2.0 software lives here,
+# in a separate image/process, deliberately outside the proprietary treadlidar package.
+# NOTE: the upstream README's build path for the L2 differs from its clone step (documentation inconsistency);
+# check the current README and adjust the catkin workspace layout.
+FROM ros:noetic-ros-base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential libeigen3-dev libpcl-dev ros-noetic-pcl-conversions ros-noetic-pcl-ros \
+    python3-catkin-tools && rm -rf /var/lib/apt/lists/*
+WORKDIR /ws/src
+RUN git clone https://github.com/unitreerobotics/unilidar_sdk2.git && \
+    git clone https://github.com/unitreerobotics/point_lio_unilidar.git
+WORKDIR /ws
+# build order: SDK ROS package first, then Point-LIO (see the READMEs)
+RUN . /opt/ros/noetic/setup.sh && catkin_make || echo "adjust workspace layout per upstream README"
+CMD ["bash"]

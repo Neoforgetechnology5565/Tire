@@ -1,0 +1,34 @@
+# Unitree L2 sensor configuration for treadlidar.
+# Fields marked VERIFIED come from the unilidar_sdk2 README (fetched 2026-10); fields marked TODO must be
+# filled from the L2 datasheet or MEASURED with scripts/characterize_sensor.py. Nothing here is guessed.
+topics:
+  cloud: unilidar/cloud            # VERIFIED (unilidar_sdk2 README default)
+  imu: unilidar/imu                # VERIFIED
+frames:
+  lidar: unilidar_lidar            # VERIFIED
+  imu: unilidar_imu                # VERIFIED
+  tire: tire                       # defined by treadlidar: origin on the wheel axis, +w along the axis (docs/CALIBRATION.md)
+network:
+  host_ip_hint: 192.168.1.2        # VERIFIED: README says the PC interface must match the L2's default target IP
+  serial_alt: /dev/ttyACM0         # VERIFIED (serial mode needs work-mode 8 + power cycle)
+lidar:
+  point_fields: [x, y, z, intensity, time, ring]   # printed by the SDK console; PointCloud2 layout NOT verified: check `ros2 topic echo --once`
+  per_point_time: true             # NOT verified; required for deskewing. Check units of `time`.
+  min_range_m: null                # TODO datasheet
+  max_range_m: null                # TODO datasheet
+  fov_deg: {horizontal: null, vertical: null}      # TODO datasheet
+  points_per_second: null          # TODO datasheet / measure
+  range_noise_mm_1sigma: null      # TODO MEASURE: scripts/characterize_sensor.py plane  (per distance, per surface)
+  range_bias_mm: null              # TODO MEASURE: step/gauge-block target
+imu:
+  gyro_noise_density: null         # TODO datasheet / Allan variance
+  accel_noise_density: null        # TODO datasheet / Allan variance
+extrinsics:
+  # LiDAR->IMU transform (rotation as 3x3 row-major, translation in metres). The L2 has an internal IMU;
+  # take the transform from the Unitree datasheet or the SDK, do NOT assume identity without checking.
+  lidar_to_imu_R: null
+  lidar_to_imu_t: null
+  sensor_to_tire_t: null           # measured per setup, see docs/CALIBRATION.md
+filtering:
+  min_range_m: 0.05                # treadlidar preprocess defaults (config/pipeline.yaml overrides)
+  max_range_m: 5.0
