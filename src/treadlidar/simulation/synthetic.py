@@ -10,8 +10,8 @@ measured in the XZ plane from +X. Sensor looks at the patch from outside.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import List, Tuple
+from dataclasses import dataclass, field, replace
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -31,6 +31,21 @@ class TreadSpec:
     lateral_pitch_m: float = 0.040
     lateral_zones: List[Tuple[float, float]] = field(default_factory=lambda: [(-0.088, -0.057), (0.062, 0.088)])
     wall_m: float = 0.0015                   # trapezoid wall run (groove side slope)
+    # Optional variable pitch sequence [m], repeated around the circumference (real tires vary pitch to
+    # cut noise; it also makes blind view alignment unambiguous). None = uniform pitch (legacy behaviour).
+    lateral_pitches_m: Optional[List[float]] = None
+    phase_m: float = 0.0                     # arc offset of the pattern (tire rotation); set via generate_scan(wheel_angle_deg)
+    _lat: Optional[np.ndarray] = field(default=None, init=False, repr=False, compare=False)
+
+    def lateral_centers(self) -> np.ndarray:
+        if self._lat is None:
+            C = 2 * np.pi * self.radius_m
+            pos, i = [0.0], 0
+            while pos[-1] < C - 1e-9:
+                pos.append(pos[-1] + self.lateral_pitches_m[i % len(self.lateral_pitches_m)])
+                i += 1
+            self._lat = np.array(pos[:-1])
+        return self._lat
 
     def crown(self, y):
         return -self.crown_m * (np.asarray(y) / self.half_width_m) ** 2
@@ -42,7 +57,19 @@ class TreadSpec:
         for yc, wd, dp in self.longitudinal:
             half = wd / 2
             h = np.minimum(h, -dp * np.clip((half + self.wall_m - np.abs(y - yc)) / self.wall_m, 0, 1))
-        sp = (s % self.lateral_pitch_m) - self.lateral_pitch_m / 2
+        s = s + self.phase_m
+        if self.lateral_pitches_m:
+            C = 2 * np.pi * self.radius_m
+            pos = self.lateral_centers()
+            sw = np.mod(s, C)
+            k = np.searchsorted(pos, sw)
+            a = pos[(k - 1) % len(pos)]
+            b = pos[k % len(pos)]
+            da = np.abs(((sw - a) + C / 2) % C - C / 2)
+            db = np.abs(((sw - b) + C / 2) % C - C / 2)
+            sp = np.minimum(da, db)
+        else:
+            sp = (s % self.lateral_pitch_m) - self.lateral_pitch_m / 2
         half = self.lateral_width_m / 2
         lat = -self.lateral_depth_m * np.clip((half + self.wall_m - np.abs(sp)) / self.wall_m, 0, 1)
         zone = np.zeros(h.shape, bool)
@@ -81,8 +108,13 @@ def _ray_blocked(spec: TreadSpec, R, C, P, S, phi0, max_travel=0.014, step=0.000
 
 
 def generate_scan(spec: TreadSpec = None, sensor: SensorSim = None, arc_length_m: float = 0.16,
-                  seed: int = 0, phi0_deg: float = 35.0, clutter: bool = True):
+                  seed: int = 0, phi0_deg: float = 35.0, clutter: bool = True, wheel_angle_deg: float = 0.0):
+    """wheel_angle_deg: rotation of the wheel from the reference pose; positive = the tread at the sensor
+    moves DOWNWARD. (The simulator's own arc coordinate s_sim points up, so features move toward -s_sim; in the
+    analysis frame +s points down, so they move toward +s and the stitcher recovers u = s - R*angle.)"""
     spec = spec or TreadSpec()
+    if wheel_angle_deg:
+        spec = replace(spec, phase_m=spec.radius_m * np.radians(wheel_angle_deg))
     sensor = sensor or SensorSim()
     rng = np.random.default_rng(seed)
     R = spec.radius_m

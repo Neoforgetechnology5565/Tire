@@ -8,6 +8,7 @@ Parameters
   output_dir    (default data/raw)           scan_id, tire_id
   n_frames      stop after this many accumulated frames (0 = until duration_s)
   duration_s    stop after this many seconds (0 = until n_frames)
+  wheel_angle_deg wheel rotation from view 0 (+ = tread at the sensor moves downward); full-tire mode
   target_xyz    approx. tire tread centre in the sensor frame [x,y,z] for distance/angle logging
 The node is *stationary-mode*: frames are concatenated in the sensor frame (the sensor must not move).
 For a moving sensor use Point-LIO poses (docs/LIO_INTEGRATION.md) and save the registered cloud instead.
@@ -34,6 +35,7 @@ class Recorder(Node):
         self.declare_parameter("n_frames", 0)
         self.declare_parameter("duration_s", 30.0)
         self.declare_parameter("target_xyz", [0.0, 0.0, 0.0])
+        self.declare_parameter("wheel_angle_deg", 0.0)      # wheel rotation from the reference mark (full-tire mode)
         g = self.get_parameter
         self.frames, self.t_first, self.imu = [], None, []
         self.create_subscription(PointCloud2, g("cloud_topic").value, self.on_cloud, 10)
@@ -82,6 +84,7 @@ class Recorder(Node):
             "scan_azimuth_deg": float(np.degrees(np.arctan2(target[1], target[0]))),
             "scan_elevation_deg": float(np.degrees(np.arcsin(target[2] / dist))) if dist > 0 else 0.0,
             "frame_fields": self.frames[0][1], "units": "metre",
+            "wheel_angle_deg": float(g("wheel_angle_deg").value),
         }
         base = out / f"{g('tire_id').value}_{g('scan_id').value}"
         np.save(str(base) + ".npy", xyz.astype(np.float32))

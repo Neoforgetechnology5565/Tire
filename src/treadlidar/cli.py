@@ -79,16 +79,25 @@ def cmd_info(args):
 
 
 def cmd_simulate(args):
-    from .simulation.synthetic import SensorSim, generate_scan
+    from .simulation.synthetic import SensorSim, TreadSpec, generate_scan
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    spec = TreadSpec(lateral_pitches_m=[0.034, 0.040, 0.046, 0.040, 0.036, 0.044]) if args.wheel_step_deg else TreadSpec()
+    if args.depths_mm:
+        d = [float(x) * 1e-3 for x in args.depths_mm.split(",")]
+        spec.longitudinal = [(y, w, dd) for (y, w, _), dd in zip(spec.longitudinal, d)]
+    arc = 0.18 if args.wheel_step_deg else 0.16
     for k in range(args.n_scans):
-        pc, truth = generate_scan(sensor=SensorSim(args.distance, args.azimuth, 0.0, args.noise_mm, 0.0, args.density),
-                                  seed=args.seed + k)
+        angle = k * args.wheel_step_deg
+        pc, truth = generate_scan(spec, SensorSim(args.distance, args.azimuth, 0.0, args.noise_mm, 0.0, args.density),
+                                  arc_length_m=arc, seed=args.seed + k, wheel_angle_deg=angle)
         np.save(out / f"sim_scan_{k + 1:02d}.npy", pc.xyz.astype(np.float32))
-        (out / f"sim_scan_{k + 1:02d}.sensor.json").write_text(json.dumps(
-            {"sensor_origin": pc.sensor_origin.tolist(), "simulated": True}))
+        side = {"sensor_origin": pc.sensor_origin.tolist(), "simulated": True}
+        if args.wheel_step_deg:
+            side["wheel_angle_deg"] = angle
+            side["circumference_m"] = 2 * np.pi * spec.radius_m
+        (out / f"sim_scan_{k + 1:02d}.sensor.json").write_text(json.dumps(side))
     ref = out / "sim_reference.csv"
     ref.write_text("groove_index,ref_depth_mm\n" + "".join(f"{i + 1},{d * 1e3:.2f}\n" for i, (_, _, d) in
                                                            enumerate(truth["spec"].longitudinal)))
@@ -186,6 +195,46 @@ def cmd_validate(args):
     rep.write_json(out / "feasibility.json", f)
 
 
+def cmd_fulltire(args):
+    from .fulltire.protocol import run_protocol
+    from .fulltire.workflow import analyze_rotating_wheel, export_fulltire
+
+    cfg = _cfg(args)
+    clouds, sides = [], []
+    for f in args.files:
+        pc = load_points(f, scale=args.scale)
+        side = _sidecar(f)
+        if "sensor_origin" in side:
+            pc.sensor_origin = np.array(side["sensor_origin"])
+        clouds.append(_sensor_origin(args, pc))
+        sides.append(side)
+    if args.angles:
+        angles = [float(x) for x in args.angles.split(",")]
+    elif all("wheel_angle_deg" in sd for sd in sides):
+        angles = [sd["wheel_angle_deg"] for sd in sides]
+    else:
+        angles = None
+    circ = args.circumference_mm * 1e-3 if args.circumference_mm else next((sd["circumference_m"] for sd in sides if "circumference_m" in sd), None)
+    fm, results, fit = analyze_rotating_wheel(clouds, cfg, angles, circ, args.tire_id,
+                                              {"blind_step_deg": args.blind_step_deg} if angles is None else None)
+    rpt = run_protocol(fm, {"n_positions": args.n_positions, "limit_mm": args.limit_mm, "uncertainty_mm": args.uncertainty_mm,
+                              "expected_grooves": args.expected_grooves})
+    paths = export_fulltire(fm, rpt, args.out, args.tire_id)
+    sm = rpt["summary"]
+    print(f"{len(clouds)} views | circumference {rpt['circumference_mm']:.0f} mm | coverage {rpt['coverage']['rows_covered_fraction']:.0%} "
+          f"(uncovered arc {rpt['coverage']['uncovered_arc_mm']:.0f} mm)")
+    if sm:
+        print(f"measurements {sm['n_measurements']} (missing {sm['n_missing']}) | depth min {sm['min_mm']:.2f} "
+              f"(groove {sm['min_at']['groove_index']} @ {sm['min_at']['angle_deg']:.0f} deg) mean {sm['mean_mm']:.2f} max {sm['max_mm']:.2f} mm")
+        for g in sm["per_groove"]:
+            print(f"  groove {g['groove_index']}: mean {g['mean_mm']:.2f} min {g['min_mm']:.2f} max {g['max_mm']:.2f} (range around tire {g['around_range_mm']:.2f}) mm")
+        lc = sm["limit_check"]
+        print(f"limit check ({lc['limit_mm']} mm): {lc['status']}  [{lc['note']}]")
+    for w in rpt["warnings"][:6]:
+        print("  warning:", w)
+    print("outputs:", args.out)
+
+
 def cmd_sweep(args):
     from .validation.sim_study import run_sweep
 
@@ -223,7 +272,10 @@ def main(argv=None):
     s = sub.add_parser("simulate"); s.add_argument("--out", required=True); s.add_argument("--n-scans", type=int, default=5)
     s.add_argument("--noise-mm", type=float, default=1.0); s.add_argument("--density", type=float, default=40.0)
     s.add_argument("--distance", type=float, default=0.6); s.add_argument("--azimuth", type=float, default=0.0)
-    s.add_argument("--seed", type=int, default=0); s.set_defaults(f=cmd_simulate)
+    s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--wheel-step-deg", type=float, default=0.0, help="simulate a rotating wheel: step between views (enables full-tire data)")
+    s.add_argument("--depths-mm", help="per-groove true depths 'd1,d2,d3,d4' (e.g. an unevenly worn tire)")
+    s.set_defaults(f=cmd_simulate)
     s = sub.add_parser("analyze"); common(s); s.add_argument("--out", required=True)
     s.add_argument("--tire-id", default="TIRE_001"); s.add_argument("--scan-id", default="SCAN_001")
     s.add_argument("--register", choices=["none", "icp"], default="none"); s.set_defaults(f=cmd_analyze)
@@ -233,6 +285,15 @@ def main(argv=None):
     s.add_argument("--origin", choices=["real", "simulated", "unknown"], default="unknown")
     s.add_argument("--out", required=True); s.add_argument("--tire-id", default="TIRE_001")
     s.add_argument("--export-each", action="store_true"); s.set_defaults(f=cmd_validate)
+    s = sub.add_parser("fulltire", help="stitch views of a rotating wheel into a 360 deg map + automated measurement protocol")
+    common(s); s.add_argument("--out", required=True); s.add_argument("--tire-id", default="TIRE_001")
+    s.add_argument("--angles", help="wheel angle of each view in degrees 'a0,a1,...' (or wheel_angle_deg in the .sensor.json sidecars)")
+    s.add_argument("--blind-step-deg", type=float, help="if angles unknown: nominal step between views")
+    s.add_argument("--circumference-mm", type=float, help="tape-measured circumference at the tread centre (strongly recommended)")
+    s.add_argument("--n-positions", type=int, default=8); s.add_argument("--limit-mm", type=float, default=1.6)
+    s.add_argument("--uncertainty-mm", type=float, help="VALIDATED measurement uncertainty (from `validate` on real data)")
+    s.add_argument("--expected-grooves", type=int, help="number of longitudinal grooves on this tire; a PASS is withheld if the count differs/unknown")
+    s.set_defaults(f=cmd_fulltire)
     s = sub.add_parser("sweep"); s.add_argument("--out", required=True)
     s.add_argument("--noise-mm", type=float, nargs="+", default=[0.5, 1, 2, 3])
     s.add_argument("--density", type=float, nargs="+", default=[20, 40, 80])

@@ -77,8 +77,45 @@ def _per_groove_point_depths(grooves, hm, ref, s, w, dr):
     return out
 
 
+def build_frame(cand: np.ndarray, sensor_origin, cfg: dict):
+    """Fit and orient the tire cylinder to segmented candidate points, crop to the tread band and centre the frame.
+
+    Returns (fit, tread_points, radius_ok, warnings). ``s = 0`` is the direction from the axis towards the
+    sensor (a fixed physical direction), ``w = 0`` the mean axial position of the retained tread points.
+    """
+    seg_cfg = cfg["segmentation"]
+    warnings: List[str] = []
+    fit = fit_cylinder(cand, seg_cfg["axis_hint"], seg_cfg["normal_k"], seg_cfg["fit_max_points"],
+                       up=cfg["analysis"]["view_up"], axis_search=seg_cfg["axis_search"],
+                       half_width_m=seg_cfg["tread_half_width_m"], radius_range_m=tuple(seg_cfg["radius_range_m"]))
+    fit = orient_frame(fit, sensor_origin, cfg["analysis"]["view_up"])
+    lo, hi = seg_cfg["radius_range_m"]
+    radius_ok = bool(lo <= fit.radius <= hi and not (fit.radius < lo + 0.05 * (hi - lo) or fit.radius > hi - 0.05 * (hi - lo)))
+    if not radius_ok:
+        warnings.append(f"tire radius NOT determinable from this arc (fit {fit.radius * 1e3:.0f} mm vs allowed {lo * 1e3:.0f}-"
+                        f"{hi * 1e3:.0f} mm): outer diameter not reported; circumferential bow is absorbed by the reference "
+                        "surface, but set segmentation.axis_hint / radius_range_m or scan a longer arc for geometry")
+    s0, w0_, dr0 = fit.to_local(cand)
+    band = (np.abs(dr0) <= seg_cfg["cylinder_band_m"]) & (np.abs(w0_) <= seg_cfg["tread_half_width_m"])
+    tread_all = cand[band]
+    if len(tread_all) < 1000:
+        raise RuntimeError("too few points in the tread band after cylinder fit; check cylinder_band_m/tread_half_width_m")
+    s1, w1, _ = fit.to_local(tread_all)
+    fit.w0 += float(w1.mean())
+    vs = np.asarray(sensor_origin, float) - fit.center
+    vx, vy = float(vs @ fit.e1), float(vs @ fit.e2)
+    if np.hypot(vx, vy) > 0.05:
+        fit.theta0 = float(np.arctan2(vy, vx))
+    else:
+        fit.theta0 += float(s1.mean()) / fit.radius
+    return fit, tread_all, radius_ok, warnings
+
+
 def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: str = "SCAN_001",
-                 out_dir: Optional[str] = None, n_frames: int = 1, export: bool = True) -> AnalysisResult:
+                 out_dir: Optional[str] = None, n_frames: int = 1, export: bool = True,
+                 fixed_fit: Optional[CylinderFit] = None) -> AnalysisResult:
+    """``fixed_fit``: reuse a cylinder frame fitted elsewhere (e.g. pooled over all views of a rotating wheel)
+    instead of fitting this scan alone; no per-view re-centring is done in that case."""
     warnings: List[str] = []
     cfg = copy.deepcopy(cfg)
     pre_cfg = copy.deepcopy(cfg["preprocess"])
@@ -92,26 +129,17 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
         raise RuntimeError(f"tire segmentation found only {len(idx)} points ({seg_info}); check ROI/ground params")
     cand = pre.xyz[idx]
 
-    fit = fit_cylinder(cand, seg_cfg["axis_hint"], seg_cfg["normal_k"], seg_cfg["fit_max_points"],
-                       up=cfg["analysis"]["view_up"], axis_search=seg_cfg["axis_search"],
-                       half_width_m=seg_cfg["tread_half_width_m"], radius_range_m=tuple(seg_cfg["radius_range_m"]))
-    fit = orient_frame(fit, pre.sensor_origin, cfg["analysis"]["view_up"])
-
-    lo, hi = seg_cfg["radius_range_m"]
-    radius_ok = bool(lo <= fit.radius <= hi and not (fit.radius < lo + 0.05 * (hi - lo) or fit.radius > hi - 0.05 * (hi - lo)))
-    if not radius_ok:
-        warnings.append(f"tire radius NOT determinable from this arc (fit {fit.radius * 1e3:.0f} mm vs allowed {lo * 1e3:.0f}-"
-                        f"{hi * 1e3:.0f} mm): outer diameter not reported; circumferential bow is absorbed by the reference "
-                        "surface, but set segmentation.axis_hint / radius_range_m or scan a longer arc for geometry")
-    # restrict to the tread band; then re-centre the local frame on the retained patch
-    s0, w0_, dr0 = fit.to_local(cand)
-    band = (np.abs(dr0) <= seg_cfg["cylinder_band_m"]) & (np.abs(w0_) <= seg_cfg["tread_half_width_m"])
-    tread_all = cand[band]
-    if len(tread_all) < 1000:
-        raise RuntimeError("too few points in the tread band after cylinder fit; check cylinder_band_m/tread_half_width_m")
-    s1, w1, _ = fit.to_local(tread_all)
-    fit.w0 += float(w1.mean())
-    fit.theta0 += float(s1.mean()) / fit.radius
+    if fixed_fit is not None:
+        fit = copy.deepcopy(fixed_fit)                       # already oriented and centred (see build_frame)
+        s0, w0_, dr0 = fit.to_local(cand)
+        band = (np.abs(dr0) <= seg_cfg["cylinder_band_m"]) & (np.abs(w0_) <= seg_cfg["tread_half_width_m"])
+        tread_all = cand[band]
+        if len(tread_all) < 1000:
+            raise RuntimeError("too few points in the tread band for the supplied frame")
+        radius_ok = True
+    else:
+        fit, tread_all, radius_ok, frame_warn = build_frame(cand, pre.sensor_origin, cfg)
+        warnings += frame_warn
     raw_s, raw_w, raw_dr = fit.to_local(tread_all)
 
     # optional statistical outlier removal (applied to the tread band only; reported, never silent)
@@ -127,7 +155,9 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
     s, w, dr = fit.to_local(tread)
 
     a = cfg["analysis"]
-    ref = fit_reference(w, dr, a["reference"], s)
+    rcfg = dict(a["reference"])
+    first_cfg = {**rcfg, "land_sigma_k": rcfg.get("first_pass_sigma_k", rcfg["land_sigma_k"])}
+    ref = fit_reference(w, dr, first_cfg, s)
     if a["cell_mm"] == "auto":
         cell_m = choose_cell_m(s, w, a["target_points_per_cell"], a["cell_min_mm"] * 1e-3, a["cell_max_mm"] * 1e-3)
     else:
@@ -144,6 +174,23 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
                         "shallow grooves below this are NOT detectable with this data")
         gcfg["threshold_mm"] = thr_eff
     grooves, gmask, D = detect_grooves(hm, ref, gcfg, z)
+    # Groove-masked refinement: refit the reference WITHOUT the points that fall in detected groove cells (dilated
+    # by one cell), so groove bottoms cannot pull the reference down (matters when depth is only a few sigma).
+    from scipy import ndimage
+    ii, jj = hm.index(s, w)
+    inb = (ii >= 0) & (jj >= 0) & (ii < hm.shape[0]) & (jj < hm.shape[1])
+    for _ in range(int(rcfg.get("masking_iterations", 2))):
+        if not gmask.any():
+            break
+        excl = np.zeros(len(s), bool)
+        excl[inb] = ndimage.binary_dilation(gmask, iterations=1)[ii[inb], jj[inb]]
+        if (~excl).sum() < 1000:
+            break
+        try:
+            ref = fit_reference(w[~excl], dr[~excl], rcfg, s[~excl])
+        except ValueError:
+            break
+        grooves, gmask, D = detect_grooves(hm, ref, gcfg, z)
     if a["smoothing_sigma_cells"] > 0:
         warnings.append(f"height-map smoothing sigma={a['smoothing_sigma_cells']} cells is ON; depths may be reduced")
     if not any(g.kind == "longitudinal" for g in grooves):

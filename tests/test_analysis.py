@@ -122,7 +122,7 @@ def test_measure_at_groove_and_on_land(result):
     assert abs(m["reference_dr_mm"] - m["bottom_dr_mm"] - m["depth_mm"]) < 1e-9
     # a point on a land rib reads ~0
     wl = (g.w_center_m + result.longitudinal()[2].w_center_m) / 2
-    land = result.measure_at(g.s_center_m, wl, 0.002)
+    land = result.measure_at(g.s_center_m, wl, 0.006)      # >= ~10 cells: a 4-cell window is dominated by noise
     assert abs(land["depth_mm"]) < 1.0
 
 
