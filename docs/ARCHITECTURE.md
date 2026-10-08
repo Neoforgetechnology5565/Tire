@@ -42,10 +42,26 @@ export (PLY/STL/OBJ/JSON/CSV)   validation (accuracy, repeatability, A/B/C)   vi
 5. `np.linalg.svd` full_matrices default built an N×N matrix (3 GB for 20 k points) → fixed.
 6. A simulator artifact (noise-free sidewall clutter) made the fit lock on to a perfect plane → clutter now carries range noise, scaled with density.
 
+## Milestone 2 additions (see `docs/FULL_TIRE.md`)
+`fulltire/`: `workflow.analyze_rotating_wheel` (pooled frame fit -> per-view analysis) -> `stitch.stitch_views` (depth maps merged in tire-fixed arc
+coordinates, conservative correlation refinement) -> `protocol.run_protocol` (automated measurements, wear metrics, guarded limit check) ->
+`mesh.fulltire_mesh` (closed ring, manifold) -> `plots`/export.
+
+Further defects found and fixed while building M2 (all caught by tests/diagnostics, kept for transparency):
+7. `s = 0` was the mean of the surviving points, which depends on occlusion/density -> now the fixed direction axis->sensor.
+8. Per-view cylinder fits of a short arc disagree on the centre by mm -> one pooled cylinder for all views of a fixed sensor.
+9. The wheel-angle sign convention was inverted between the simulator and the stitcher (fitted +s points down, simulator +s up). Symptom: scattered 6-20 mm
+   misalignments that I first mis-attributed to occlusion physics; truth comparison (`s_fit = -s_true`, residual 0.09 mm) found it.
+10. Shallow grooves (2-5 mm at sigma 1 mm) pulled the reference down (they were accepted as "land") and the groove count failed -> groove-masked
+    refit of the reference (+ a tighter first-pass tolerance). Bias on 2-5 mm grooves went from "undetectable" to within ~0.2 mm.
+11. The limit check could return PASS while a worn groove was missed (3 of 4 grooves found at 1.6-3 mm) -> lower protocol detection floor, `expected_grooves`,
+    and guards that withhold PASS.
+
 ## Known limitations
 * **No real L2 data has been processed.** All accuracy numbers in this repo come from simulation with *assumed* sensor parameters.
 * Simulator omits beam-footprint mixed pixels, multipath, intensity-dependent bias, registration error → optimistic for narrow grooves.
 * Axis search assumes an (approximately) level vehicle unless `--axis-hint` is given; very short arcs (< ~20°) make the radius undeterminable (reported).
 * ICP on a tread patch is poorly constrained along the circumference (a cylinder slides around its axis) — do not rely on it for sub-mm registration; use fixed pose or LIO.
 * Groove *width* is approximate (cell-size limited); *depth* is the validated quantity. Sipes are not resolved.
-* Only one patch (a partial arc) is analysed; full-circumference unwrapping is the moving-vehicle milestone.
+* A single scan analyses one partial arc; the full circumference needs the rotating-wheel M2 workflow (stationary sensor, wheel turned in steps).
+* Near the legal limit (~1.6 mm) depth is only a couple of times the per-cell noise at sigma ~ 1 mm: this is the hardest regime and must be validated on tires worn to ~1.6 mm before any limit check is trusted.

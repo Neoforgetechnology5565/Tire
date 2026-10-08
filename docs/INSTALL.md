@@ -4,7 +4,7 @@
 
 | Part | Requirement | Status |
 |---|---|---|
-| Analysis package `treadlidar` | Python >= 3.9 (developed/tested on **3.13**), numpy, scipy, matplotlib, pyyaml. Pure Python, **no C++ build**. | tested (70 tests) |
+| Analysis package `treadlidar` | Python >= 3.9 (developed/tested on **3.13**), numpy, scipy, matplotlib, pyyaml. Pure Python, **no C++ build**. | tested (95 tests) |
 | Viewer | `pip install open3d` + a display with OpenGL/EGL (`libegl1`, `libgl1`) | **untested here** (no GL in the dev container) |
 | L2 driver | **Ubuntu 20.04** + **ROS 2 Foxy** (or ROS1 Noetic), PCL 1.10, CMake/C++ toolchain | versions are those verified in the `unilidar_sdk2` README; **untested here** |
 | Point-LIO (moving sensor) | Ubuntu 20.04 + **ROS1 Noetic**, Eigen, pcl-conversions (GPL-2.0) | **untested here**; not needed for the stationary milestone |
@@ -18,7 +18,7 @@ git clone <repo> && cd Tire
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[test]"        # numpy scipy matplotlib pyyaml pytest
 pip install open3d              # optional viewer
-pytest -q                       # 70 tests, ~30 s, no sensor needed
+pytest -q                       # 95 tests, ~90 s, no sensor needed
 bash scripts/run_demo.sh        # simulated end-to-end demo -> data/output/demo
 ```
 

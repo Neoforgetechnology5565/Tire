@@ -45,3 +45,9 @@ See `docs/VALIDATION.md` for how RESULT A/B/C is decided and what is reported.
 * Sensor frame (`unilidar_lidar`): as published by the driver.
 * Tire frame (`treadlidar`): fitted cylinder axis = **w**; **s** = arc length along the circumference; **dr** = radial height (grooves negative).
   +w points to the **viewer's right** when looking from the sensor at the tire (`view_up` = +Z by default).
+
+## 5. Full-tire scans (Milestone 2)
+Wheel free to rotate (stand/jack), sensor fixed, tape mark on the tire. Record one view every 20 deg (`wheel_angle_deg:=<angle>`; positive = tread at the sensor
+moves downward), >= 25 % overlap between neighbouring views, 18 views for 360 deg. Measure the circumference with a tape at the tread centre. Reference depths:
+digital gauge at every groove at, say, 8 positions (e.g. every 45 deg), recorded per groove/position; use them to validate the protocol output
+(`measurements.csv`) the same way as for M1. See `docs/FULL_TIRE.md`.
