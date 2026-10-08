@@ -29,10 +29,11 @@ def plot_depth_map(path, hm, D, grooves, vmax_mm=10.0, cmap="RdYlGn_r", title="T
 def plot_cross_section(path, s, w, dr, ref, s_center, half_window_m=0.002, z_filtered=None, hm=None, title=""):
     """Raw points (thin s-slice) vs reference vs mesh/height-map profile: lets you SEE any over-smoothing."""
     m = np.abs(s - s_center) <= half_window_m
+    dr = dr - 0.0   # (kept in raw radial units; reference is evaluated at s_center)
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(w[m] * 1e3, dr[m] * 1e3, ".", ms=2, color="0.5", label=f"raw points (slice {2 * half_window_m * 1e3:.0f} mm)")
     wg = np.linspace(w.min(), w.max(), 400)
-    ax.plot(wg * 1e3, ref(wg) * 1e3, "g-", lw=1.2, label="reference surface")
+    ax.plot(wg * 1e3, ref(wg, np.full_like(wg, s_center)) * 1e3, "g-", lw=1.2, label="reference surface")
     if z_filtered is not None and hm is not None:
         i = int(np.clip((s_center - hm.s0) // hm.cell, 0, hm.shape[0] - 1))
         wc = hm.w0 + (np.arange(hm.shape[1]) + 0.5) * hm.cell

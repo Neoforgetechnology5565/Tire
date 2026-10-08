@@ -37,9 +37,9 @@ class Groove:
 
 def depth_map(hm: HeightMap, ref: ReferenceSurface, z=None) -> np.ndarray:
     """Depth below the reference per cell [m]; NaN for empty cells."""
-    _, wc = hm.cell_centers()
+    sc, wc = hm.cell_centers()
     zz = hm.z if z is None else z
-    return ref(wc)[None, :] - zz
+    return ref.on_grid(sc, wc) - zz
 
 
 def detect_grooves(hm: HeightMap, ref: ReferenceSurface, cfg: dict, z=None):

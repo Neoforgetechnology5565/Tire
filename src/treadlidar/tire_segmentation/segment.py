@@ -66,9 +66,17 @@ def segment_tire(xyz: np.ndarray, cfg: dict, sensor_origin=(0, 0, 0)):
         res = ransac_plane(xyz[idx], gr["dist_thresh_m"], gr["iterations"],
                            max_tilt_deg=gr["max_tilt_deg"], up=gr["up"])
         if res is not None:
-            idx = idx[~res[2]]
-            info["ground_normal"] = res[0].tolist()
-            info["n_ground_removed"] = int(res[2].sum())
+            nrm, d, inl = res
+            # noise-adaptive: widen the removal band to 3.5 sigma of the plane's own scatter, so noisy
+            # ground returns do not stay attached to the tire cluster and dominate the cylinder fit
+            dist = xyz[idx] @ nrm + d
+            sig = 1.4826 * np.median(np.abs(dist[inl] - np.median(dist[inl])))
+            band = max(gr["dist_thresh_m"], 3.5 * sig)
+            rm = np.abs(dist - np.median(dist[inl])) <= band
+            idx = idx[~rm]
+            info["ground_normal"] = nrm.tolist()
+            info["ground_sigma_m"] = float(sig)
+            info["n_ground_removed"] = int(rm.sum())
     info["n_after_ground"] = len(idx)
     if len(idx) == 0:
         return idx, info

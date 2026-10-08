@@ -160,14 +160,20 @@ def fit_cylinder(P: np.ndarray, axis_hint=None, normal_k: int = 24, max_points: 
     tol_s = 0.75 * ransac_tol_m
     for ax in cands:
         axn, e1, e2 = _basis(ax)
-        xy = np.column_stack([(sub - mean) @ e1, (sub - mean) @ e2])
+        sc_pts = sub
+        if half_width_m is not None:       # score on the tread only: sidewall sheets are planar and would win
+            a = (sub - mean) @ axn
+            sc_pts = sub[np.abs(a - np.median(a)) <= half_width_m]
+            if len(sc_pts) < 200:
+                continue
+        xy = np.column_stack([(sc_pts - mean) @ e1, (sc_pts - mean) @ e2])
         c2, R2, cnt = _ransac_circle(xy, ransac_tol_m, 80, np.random.default_rng(seed), radius_range_m)
         if cnt < 0:
             continue
         # truncated-quadratic (M-estimator) cost: far more discriminating than an inlier count when
         # the visible arc is short (sagitta ~ RANSAC tolerance)
         res = np.hypot(xy[:, 0] - c2[0], xy[:, 1] - c2[1]) - R2
-        cost = float(np.minimum(res ** 2, tol_s ** 2).sum())
+        cost = float(np.minimum(res ** 2, tol_s ** 2).mean())
         if cost < best[0]:
             best = (cost, axn)
     if best[1] is None:

@@ -63,7 +63,7 @@ def _per_groove_point_depths(grooves, hm, ref, s, w, dr):
     """Median point-level depth over each groove's core cells (no cell aggregation)."""
     i, j = hm.index(s, w)
     ok = (i >= 0) & (j >= 0) & (i < hm.shape[0]) & (j < hm.shape[1])
-    depth_pts = ref(w) - dr
+    depth_pts = ref(w, s) - dr
     out = []
     for g in grooves:
         core_mask = np.zeros(hm.shape, bool)
@@ -98,9 +98,11 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
     fit = orient_frame(fit, pre.sensor_origin, cfg["analysis"]["view_up"])
 
     lo, hi = seg_cfg["radius_range_m"]
-    if fit.radius < lo + 0.08 * (hi - lo) or fit.radius > hi - 0.08 * (hi - lo):
-        warnings.append(f"fitted radius {fit.radius * 1e3:.0f} mm is at the edge of radius_range_m {lo}-{hi}: the axis/radius "
-                        "may be ambiguous for this short arc; set segmentation.axis_hint and/or radius_range_m")
+    radius_ok = bool(lo <= fit.radius <= hi and not (fit.radius < lo + 0.05 * (hi - lo) or fit.radius > hi - 0.05 * (hi - lo)))
+    if not radius_ok:
+        warnings.append(f"tire radius NOT determinable from this arc (fit {fit.radius * 1e3:.0f} mm vs allowed {lo * 1e3:.0f}-"
+                        f"{hi * 1e3:.0f} mm): outer diameter not reported; circumferential bow is absorbed by the reference "
+                        "surface, but set segmentation.axis_hint / radius_range_m or scan a longer arc for geometry")
     # restrict to the tread band; then re-centre the local frame on the retained patch
     s0, w0_, dr0 = fit.to_local(cand)
     band = (np.abs(dr0) <= seg_cfg["cylinder_band_m"]) & (np.abs(w0_) <= seg_cfg["tread_half_width_m"])
@@ -125,17 +127,29 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
     s, w, dr = fit.to_local(tread)
 
     a = cfg["analysis"]
-    ref = fit_reference(w, dr, a["reference"])
+    ref = fit_reference(w, dr, a["reference"], s)
     if a["cell_mm"] == "auto":
         cell_m = choose_cell_m(s, w, a["target_points_per_cell"], a["cell_min_mm"] * 1e-3, a["cell_max_mm"] * 1e-3)
     else:
         cell_m = float(a["cell_mm"]) * 1e-3
     hm = build_heightmap(s, w, dr, cell_m, cfg["reconstruction"]["min_points_per_cell"])
     z = smooth_nan(hm.z, a["smoothing_sigma_cells"])
-    grooves, gmask, D = detect_grooves(hm, ref, a["groove"], z)
+    occ = hm.count[hm.count > 0]
+    sigma_cell_mm = ref.sigma_land_m * 1e3 / np.sqrt(max(float(np.median(occ)), 1.0))
+    gcfg = dict(a["groove"])
+    thr_eff = max(gcfg["threshold_mm"], gcfg["min_threshold_sigma"] * sigma_cell_mm)
+    if thr_eff > gcfg["threshold_mm"] + 1e-9:
+        warnings.append(f"groove threshold raised from {gcfg['threshold_mm']} to {thr_eff:.2f} mm "
+                        f"(= {gcfg['min_threshold_sigma']} x per-cell noise {sigma_cell_mm:.2f} mm) to avoid noise-induced false grooves; "
+                        "shallow grooves below this are NOT detectable with this data")
+        gcfg["threshold_mm"] = thr_eff
+    grooves, gmask, D = detect_grooves(hm, ref, gcfg, z)
     if a["smoothing_sigma_cells"] > 0:
         warnings.append(f"height-map smoothing sigma={a['smoothing_sigma_cells']} cells is ON; depths may be reduced")
-
+    if not any(g.kind == "longitudinal" for g in grooves):
+        warnings.append("no longitudinal grooves detected: either the tread is not resolved at this noise/density "
+                        f"(land noise {ref.sigma_land_m * 1e3:.2f} mm, ~{sigma_cell_mm:.2f} mm per cell, effective threshold "
+                        f"{gcfg['threshold_mm']:.2f} mm) or segmentation/axis parameters are wrong")
     spacing = dens.nn_spacing(tread)
     dstats = dens.density_stats(hm, len(tread))
     noise_cell = dens.land_cell_noise(hm, D, gmask, 0.5e-3 + ref.sigma_land_m)
@@ -153,7 +167,7 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
     meta = describe_scan(scan_id, pre, n_frames, target=fit.to_world(np.array([0.]), np.array([0.]), np.array([0.]))[0],
                          density_per_cm2=dstats["density_per_cm2_mean"])
     meta.n_points = int(len(tread))
-    land_w = w[(dr - ref(w)) > -ref.sigma_land_m * 2.5]
+    land_w = w[(dr - ref(w, s)) > -ref.sigma_land_m * 2.5]
     report = {
         "tire_id": tire_id, "scan_id": scan_id,
         "mean_tread_depth_mm": dep.depth_statistics(long)["mean_mm"],
@@ -165,7 +179,8 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
         "depth_distribution": dep.cell_depth_distribution(D, gmask),
         "grooves": [dict(g.summary(), position_index=(long.index(g) + 1 if g in long else None)) for g in grooves],
         "geometry": {
-            "fitted_radius_mm": fit.radius * 1e3, "outer_diameter_mm": 2 * (fit.radius + float(ref(np.array([0.0]))[0])) * 1e3,
+            "fitted_radius_mm": fit.radius * 1e3, "outer_diameter_mm": (2 * (fit.radius + float(ref(np.array([0.0]), np.array([0.0]))[0])) * 1e3) if radius_ok else None,
+            "radius_determined": radius_ok,
             "tread_land_width_mm": float((land_w.max() - land_w.min()) * 1e3) if land_w.size else None,
             "axis": fit.axis.tolist(), "center": fit.center.tolist(), "fit_rms_mm": fit.rms * 1e3,
             "arc_covered_mm": float((s.max() - s.min()) * 1e3), "width_covered_mm": float((w.max() - w.min()) * 1e3),
@@ -196,7 +211,7 @@ def export_result(res: AnalysisResult, out_dir) -> dict:
             "mean_tread_depth_mm": f"{res.report['mean_tread_depth_mm']:.3f}" if res.report["mean_tread_depth_mm"] is not None else "n/a"}
     v, f, col, depth = res.mesh
     # point-level depth + radial normals for the point cloud
-    d_pts = res.ref(res.w) - res.dr
+    d_pts = res.ref(res.w, res.s) - res.dr
     th = res.s / res.fit.radius + res.fit.theta0
     nrm = np.cos(th)[:, None] * res.fit.e1 + np.sin(th)[:, None] * res.fit.e2
     paths = {

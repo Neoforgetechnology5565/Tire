@@ -107,20 +107,26 @@ def generate_scan(spec: TreadSpec = None, sensor: SensorSim = None, arc_length_m
     parts = [X]
     n_tread = len(X)
     if clutter:
-        g = rng.uniform([-0.5, -0.8, 0], [1.2, 0.8, 0], (15000, 3))
+        g = rng.uniform([-0.5, -0.8, 0], [1.2, 0.8, 0], (int(375 * sensor.density_per_cm2), 3))
         parts.append(g)
         side = []
         for sgn in (-1, 1):
-            m = 4000
+            m = int(0.25 * sensor.density_per_cm2 * 100)      # sidewall sheet density scales with the scan density
             sp = rng.uniform(-arc_length_m, arc_length_m, m)
             rr = rng.uniform(R - 0.12, R - 0.01, m)
             ph = phi0 + sp / R
             side.append(np.column_stack([C[0] + rr * np.cos(ph), np.full(m, sgn * (spec.half_width_m + 0.015)),
                                          C[2] + rr * np.sin(ph)]))
         parts += side
-        wall = rng.uniform([2.5, -1.0, 0.0], [2.51, 1.0, 1.2], (8000, 3))
+        wall = rng.uniform([2.5, -1.0, 0.0], [2.51, 1.0, 1.2], (int(200 * sensor.density_per_cm2), 3))
         parts.append(wall)
+    # every returned point (clutter included) carries the sensor's range noise along its ray
     xyz = np.vstack(parts)
+    clutter_pts = xyz[n_tread:]
+    if len(clutter_pts):
+        v = clutter_pts - S
+        rr = np.linalg.norm(v, axis=1, keepdims=True)
+        xyz[n_tread:] = S + v / rr * (rr + rng.normal(0, sensor.range_noise_mm, (len(v), 1)) * 1e-3)
     pc = PointCloud(xyz, sensor_origin=S, frame_id="world",
                     meta={"simulated": True, "n_tread_points": n_tread})
     truth = {"spec": spec, "sensor": sensor, "radius_m": R, "center": C, "axis": np.array([0.0, 1.0, 0.0]),

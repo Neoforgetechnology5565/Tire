@@ -40,6 +40,8 @@ def groove_resolvability(grooves, hm: HeightMap, sigma_land_m: float, spacing_ef
     """Per-groove verdict: enough points across the width AND depth sufficiently above the noise."""
     out = []
     for g in grooves:
+        if g.kind == "other":      # unclassified remnants (junctions/angled): not evaluated here
+            continue
         width_mm = g.width_m * 1e3
         depth_mm = g.depth_m * 1e3
         n_across = width_mm / spacing_eff_mm if spacing_eff_mm > 0 else float("nan")
@@ -48,10 +50,12 @@ def groove_resolvability(grooves, hm: HeightMap, sigma_land_m: float, spacing_ef
         snr = depth_mm / (sigma_land_m * 1e3) if sigma_land_m > 0 else float("inf")
         ok_w = n_across >= cfg["min_points_across_groove"]
         ok_d = snr >= cfg["min_depth_over_noise"]
+        plausible = width_mm <= cfg["max_groove_width_mm"] and g.kind != "other"
         out.append({"groove_id": g.id, "kind": g.kind, "width_mm": width_mm, "depth_mm": depth_mm,
                     "points_across_width": float(n_across), "points_in_core": int(g.n_points_core),
                     "single_point_noise_mm": float(sigma_land_m * 1e3),
                     "depth_random_uncertainty_mm": float(sig_depth_mm),
                     "depth_over_noise": float(snr),
-                    "resolved_width": bool(ok_w), "resolved_depth": bool(ok_d), "resolved": bool(ok_w and ok_d)})
+                    "resolved_width": bool(ok_w), "resolved_depth": bool(ok_d), "plausible_width": bool(plausible),
+                    "resolved": bool(ok_w and ok_d and plausible)})
     return out

@@ -42,7 +42,7 @@ def measure_at(hm: HeightMap, ref: ReferenceSurface, D: np.ndarray, s_m: float, 
     if not m.any():
         return {"s_m": s_m, "w_m": w_m, "valid": False, "reason": "no data within window"}
     depth = float(np.median(D[m]))
-    r_ref = float(ref(np.array([w_m]))[0])
+    r_ref = float(ref(np.array([w_m]), np.array([s_m]))[0])
     return {"s_m": s_m, "w_m": w_m, "valid": True, "n_cells": int(m.sum()), "n_points": int(hm.count[m].sum()),
             "depth_mm": depth * 1e3, "reference_dr_mm": r_ref * 1e3, "bottom_dr_mm": (r_ref - depth) * 1e3,
             "window_depth_min_mm": float(D[m].min() * 1e3), "window_depth_max_mm": float(D[m].max() * 1e3)}
