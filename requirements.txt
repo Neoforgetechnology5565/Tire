@@ -1,0 +1,7 @@
+numpy>=1.22          # BSD-3
+scipy>=1.9           # BSD-3
+matplotlib>=3.5      # PSF-based (matplotlib license)
+pyyaml>=6.0          # MIT
+# optional
+open3d>=0.17         # MIT - interactive viewer, optional Poisson/BPA reconstruction
+pytest>=7            # MIT - tests

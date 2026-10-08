@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "treadlidar"
+version = "0.1.0"
+description = "Unitree L2 tire-tread 3D reconstruction and measurement feasibility prototype"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.22", "scipy>=1.9", "matplotlib>=3.5", "pyyaml>=6.0"]
+
+[project.optional-dependencies]
+viewer = ["open3d>=0.17"]
+test = ["pytest>=7"]
+
+[project.scripts]
+treadlidar = "treadlidar.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
