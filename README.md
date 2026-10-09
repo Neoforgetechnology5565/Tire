@@ -7,17 +7,25 @@ Unitree L2 can resolve tire tread and measure its depth to ±0.5-1.0 mm. The sof
 
 | Item | Status |
 |---|---|
-| Pipeline (segment → cylinder fit → reference surface → height-map → grooves → depth → mesh → PLY/STL/OBJ/JSON/CSV) | **implemented, 95 automated tests pass** (`pytest -q`, ~90 s, no sensor) |
+| Pipeline (segment → cylinder fit → reference surface → height-map → grooves → depth → mesh → PLY/STL/OBJ/JSON/CSV) | **implemented, 134 automated tests pass** (`pytest -q`, ~2.5 min, no sensor; the browser tests skip if Playwright/Chromium are absent) |
 | Validation module (error/MAE/RMSE/SD/bias/CI, repeatability, A/B/C verdict), point-density/resolvability, sensor characterisation tools | implemented + tested on synthetic data |
 | **Results on real Unitree L2 data** | **none yet - no sensor or physical tire was available. The verdict for the L2 is `NOT_ASSESSED`/pending.** |
 | Simulation-based sensitivity (what noise/density *would* be needed) | done: `docs/SIMULATION_RESULTS.md` (assumed sensor parameters, not L2 measurements) |
 | L2 driver / ROS 2 recorder / Point-LIO bridge | written from the upstream READMEs; **untested on hardware** |
-| Open3D interactive viewer | written, geometry builders unit-tested; **window/picking untested** (no GL in the dev container); headless matplotlib figures are tested |
+| **Desktop UI** (`treadlidar ui`): 10-step workflow, 3D views, depth map, pins/regions, accuracy, full tire, export | **implemented; 27 API + 12 real-browser tests pass** (headless Chromium). The native-window wrapper (pywebview / Chromium app window) is untested here (no display) |
+| Open3D viewer (`treadlidar view`) | superseded by the UI for most uses; **window/picking untested** (no GL in the dev container) |
 | **M2: full 360° tire** (rotating wheel, fixed sensor): stitching, automated measurement protocol, wear metrics, limit check with guards, closed-ring mesh | **implemented, tested on simulated data only** - see `docs/FULL_TIRE.md`; unvalidated until real data passes M1 |
 | Moving-vehicle scanning | **not attempted** (by design); interfaces prepared (`lio/README.md`) |
 
 The feasibility result (A suitable / B limited / C insufficient) can only be produced by running `treadlidar validate ... --origin real`
 on real data, following `docs/SCANNING_PROCEDURE.md`. Simulated data can never yield A/B/C (enforced in code and tests).
+
+## Desktop interface
+```bash
+pip install -e ".[desktop]"   # pywebview is optional; a Chromium/Chrome/Edge window or your browser also work
+treadlidar ui                    # the whole workflow in one window: load → segment → measure → accuracy → export
+```
+See `docs/UI.md` and the screenshots in `docs/images/` (all simulated data). The interface keeps the data origin visible and only lets the Accuracy step produce a verdict.
 
 ## Quick start (no sensor)
 ```bash
@@ -58,7 +66,7 @@ src/treadlidar/{data_acquisition,preprocessing,registration,tire_segmentation,re
                 measurement,validation,export,calibration,simulation,viewer}
 data/{raw,rosbag,processed,reference,output}
 ```
-Docs: FULL_TIRE · INSTALL · SCANNING_PROCEDURE · CALIBRATION · VALIDATION · ARCHITECTURE (design decisions, defects found, limitations) · LIO_INTEGRATION ·
+Docs: UI · FULL_TIRE · INSTALL · SCANNING_PROCEDURE · CALIBRATION · VALIDATION · ARCHITECTURE (design decisions, defects found, limitations) · LIO_INTEGRATION ·
 LICENSES · SIMULATION_RESULTS · TROUBLESHOOTING.
 
 ## Licensing

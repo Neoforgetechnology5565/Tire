@@ -11,13 +11,17 @@ dependencies = ["numpy>=1.22", "scipy>=1.9", "matplotlib>=3.5", "pyyaml>=6.0"]
 
 [project.optional-dependencies]
 viewer = ["open3d>=0.17"]
-test = ["pytest>=7"]
+desktop = ["pywebview>=5.0"]
+test = ["pytest>=7", "playwright>=1.40", "pillow>=9"]   # playwright/pillow only for the browser UI tests (skipped if absent)
 
 [project.scripts]
 treadlidar = "treadlidar.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"treadlidar.ui" = ["static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -13,7 +13,12 @@ engineering due diligence, **not legal advice**: have counsel review before comm
 | PyYAML 6.x | config | MIT | package metadata |
 | open3d 0.20 (optional) | interactive viewer, optional Poisson/BPA | MIT | package metadata |
 | pytest (test only) | tests | MIT | package metadata |
+| pywebview 6.x (optional) | native desktop window for `treadlidar ui` | BSD-3-Clause | package metadata. **Linux backends:** prefer GTK (LGPL) or PySide6 (LGPL); its Qt option can pull in PyQt (GPL), unsuitable for a closed commercial build |
+| playwright (test only, optional) | browser UI tests | Apache-2.0 | package metadata (verify) |
+| pillow (test only, optional) | image check in a UI test | MIT-CMU (permissive, HPND-style) | package metadata |
+| Chromium / Chrome / Edge (optional) | `--app` window | BSD-3 (Chromium) / proprietary browser licences | not bundled; the user's installed browser is launched |
 
+The desktop UI (`src/treadlidar/ui/`) is original code with **no web framework, no CDN assets, no fonts or icon packs** (icons are inline SVG written for this project; system fonts only).
 PLY/STL/OBJ/PCD readers and writers, ICP, RANSAC, cylinder fit, reference-surface estimation, groove detection
 and all validation code are **original code in this repository** (no third-party code copied).
 

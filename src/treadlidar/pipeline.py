@@ -113,22 +113,26 @@ def build_frame(cand: np.ndarray, sensor_origin, cfg: dict):
 
 def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: str = "SCAN_001",
                  out_dir: Optional[str] = None, n_frames: int = 1, export: bool = True,
-                 fixed_fit: Optional[CylinderFit] = None) -> AnalysisResult:
+                 fixed_fit: Optional[CylinderFit] = None, progress=None) -> AnalysisResult:
     """``fixed_fit``: reuse a cylinder frame fitted elsewhere (e.g. pooled over all views of a rotating wheel)
     instead of fitting this scan alone; no per-view re-centring is done in that case."""
+    _p = progress or (lambda frac, msg: None)
     warnings: List[str] = []
     cfg = copy.deepcopy(cfg)
+    _p(0.03, "Filtering points")
     pre_cfg = copy.deepcopy(cfg["preprocess"])
     sor = pre_cfg["outlier_removal"]
     sor_enabled, sor["enabled"] = sor["enabled"], False      # SOR is applied after segmentation, see below
     pre, pre_info = apply_preprocess(pc, pre_cfg)
 
     seg_cfg = cfg["segmentation"]
+    _p(0.10, "Segmenting the tire (ground removal, clustering)")
     idx, seg_info = segment_tire(pre.xyz, seg_cfg, pre.sensor_origin)
     if len(idx) < 1000:
         raise RuntimeError(f"tire segmentation found only {len(idx)} points ({seg_info}); check ROI/ground params")
     cand = pre.xyz[idx]
 
+    _p(0.25, "Fitting the tire cylinder")
     if fixed_fit is not None:
         fit = copy.deepcopy(fixed_fit)                       # already oriented and centred (see build_frame)
         s0, w0_, dr0 = fit.to_local(cand)
@@ -155,6 +159,7 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
     s, w, dr = fit.to_local(tread)
 
     a = cfg["analysis"]
+    _p(0.45, "Estimating the reference surface")
     rcfg = dict(a["reference"])
     first_cfg = {**rcfg, "land_sigma_k": rcfg.get("first_pass_sigma_k", rcfg["land_sigma_k"])}
     ref = fit_reference(w, dr, first_cfg, s)
@@ -164,6 +169,7 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
         cell_m = float(a["cell_mm"]) * 1e-3
     hm = build_heightmap(s, w, dr, cell_m, cfg["reconstruction"]["min_points_per_cell"])
     z = smooth_nan(hm.z, a["smoothing_sigma_cells"])
+    _p(0.65, "Detecting grooves")
     occ = hm.count[hm.count > 0]
     sigma_cell_mm = ref.sigma_land_m * 1e3 / np.sqrt(max(float(np.median(occ)), 1.0))
     gcfg = dict(a["groove"])
@@ -197,11 +203,13 @@ def analyze_scan(pc: PointCloud, cfg: dict, tire_id: str = "TIRE_001", scan_id: 
         warnings.append("no longitudinal grooves detected: either the tread is not resolved at this noise/density "
                         f"(land noise {ref.sigma_land_m * 1e3:.2f} mm, ~{sigma_cell_mm:.2f} mm per cell, effective threshold "
                         f"{gcfg['threshold_mm']:.2f} mm) or segmentation/axis parameters are wrong")
+    _p(0.82, "Measuring density, noise and resolvability")
     spacing = dens.nn_spacing(tread)
     dstats = dens.density_stats(hm, len(tread))
     noise_cell = dens.land_cell_noise(hm, D, gmask, 0.5e-3 + ref.sigma_land_m)
     resolv = dens.groove_resolvability(grooves, hm, ref.sigma_land_m, dstats["effective_spacing_mm"], cfg["density"])
 
+    _p(0.92, "Reconstructing the surface")
     mesh = heightfield_mesh(hm, fit, z, D, cfg["reconstruction"]["edge_jump_mm"] * 1e-3)
 
     # RAW vs FILTERED vs RECONSTRUCTED comparison of the depth of each groove

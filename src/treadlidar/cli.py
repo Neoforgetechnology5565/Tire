@@ -7,6 +7,7 @@ treadlidar measure   FILE --at S_MM,W_MM ...    depth at user-selected locations
 treadlidar validate  FILE... --reference CSV --origin real|simulated --out DIR
 treadlidar sweep     --out DIR                  simulation sensitivity study (NOT a statement about the L2)
 treadlidar view      FILE                       Open3D viewer (needs open3d + display)
+treadlidar ui                                   desktop interface (all steps in one window)
 
 Workflow mapping: load/preview = info + view; register = analyze (several FILEs + --register icp);
 segment/reconstruct/analyze/calculate = analyze; measure area = measure/view; accuracy = validate;
@@ -235,6 +236,12 @@ def cmd_fulltire(args):
     print("outputs:", args.out)
 
 
+def cmd_ui(args):
+    from .ui.launcher import launch
+
+    sys.exit(launch(args.port, args.mode, args.width, args.height, args.browser))
+
+
 def cmd_sweep(args):
     from .validation.sim_study import run_sweep
 
@@ -294,6 +301,13 @@ def main(argv=None):
     s.add_argument("--uncertainty-mm", type=float, help="VALIDATED measurement uncertainty (from `validate` on real data)")
     s.add_argument("--expected-grooves", type=int, help="number of longitudinal grooves on this tire; a PASS is withheld if the count differs/unknown")
     s.set_defaults(f=cmd_fulltire)
+    s = sub.add_parser("ui", help="open the desktop interface (local window; nothing leaves this computer)")
+    s.add_argument("--mode", choices=["auto", "pywebview", "chromium", "browser", "none"], default="auto",
+                   help="window type: auto tries pywebview, then a Chromium/Chrome/Edge app window, then the default browser; none only prints the link")
+    s.add_argument("--port", type=int, default=0, help="fixed port (default: a free one)")
+    s.add_argument("--browser", help="path/name of a Chromium-based browser for --mode chromium")
+    s.add_argument("--width", type=int, default=1480); s.add_argument("--height", type=int, default=920)
+    s.set_defaults(f=cmd_ui)
     s = sub.add_parser("sweep"); s.add_argument("--out", required=True)
     s.add_argument("--noise-mm", type=float, nargs="+", default=[0.5, 1, 2, 3])
     s.add_argument("--density", type=float, nargs="+", default=[20, 40, 80])

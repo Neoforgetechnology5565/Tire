@@ -5,3 +5,6 @@ pyyaml>=6.0          # MIT
 # optional
 open3d>=0.17         # MIT - interactive viewer, optional Poisson/BPA reconstruction
 pytest>=7            # MIT - tests
+pywebview>=5.0    # BSD-3 - optional native desktop window for `treadlidar ui` (a Chromium/Chrome/Edge app window or the browser also work)
+playwright>=1.40   # Apache-2.0 - optional, browser UI tests only
+pillow>=9          # MIT-CMU - optional, browser UI tests only
